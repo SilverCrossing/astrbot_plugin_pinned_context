@@ -1,0 +1,17 @@
+# 每个会话最多钉选块数
+max_blocks_per_session: 20
+
+# 单个块标签最大长度
+max_label_length: 20
+
+# 单个块内容最大长度
+max_content_length: 500
+
+# idle 块保留天数（闲置超过此天数才考虑清理）
+idle_retention_days: 7
+
+# idle 块保留 LLM 调用次数（又经过了此轮次才清理）
+idle_retention_calls: 10
+
+# 注入后总 token 警告阈值（0=不检查）
+token_warning_threshold: 1000
