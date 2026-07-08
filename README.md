@@ -14,7 +14,7 @@
 /pin activate <标签>               重新激活闲置块
 /pin pin <标签>                    长期锚定（永不过期）
 /pin unpin <标签>                  取消锚定
-/pin clear                         清空全部（需确认）
+/pin clear                         清空全部（管理员 + 需确认）
 /pin help                          显示帮助
 ```
 
@@ -38,9 +38,23 @@
 
 将本文件夹放入 AstrBot 的 `data/plugins/` 目录，重启即可。
 
+配置项通过 AstrBot WebUI 管理面板调整（基于 `_conf_schema.json` 自动生成）。
+
+## 配置项
+
+| 配置项 | 默认值 | 说明 |
+|--------|--------|------|
+| `max_blocks_per_session` | 20 | 每个会话最多钉选块数 |
+| `max_label_length` | 20 | 标签最大长度 |
+| `max_content_length` | 500 | 内容最大长度 |
+| `idle_retention_days` | 7 | idle 块保留天数 |
+| `idle_retention_calls` | 10 | idle 块保留 LLM 调用次数 |
+| `token_warning_threshold` | 1000 | token 警告阈值（0=不检查） |
+
 ## 设计理念
 
-- **System Prompt 之后注入**：安全约束不被覆盖
+- **System Prompt 之后注入**：安全约束不被覆盖，免疫滑动窗口截断
 - **纯手动管理**：第一期不做 AI 自动管理
 - **闲置自动清理**：避免僵尸块永久残留
 - **20 个上限**：防止 token 膨胀
+- **管理员保护**：`/pin clear` 需要管理员权限

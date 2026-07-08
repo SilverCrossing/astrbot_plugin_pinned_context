@@ -1,0 +1,3 @@
+/.workbuddy/
+*.md
+!README.md

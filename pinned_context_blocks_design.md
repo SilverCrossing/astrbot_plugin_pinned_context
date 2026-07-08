@@ -49,7 +49,7 @@ class PinnedBlock:
     content: str         # 内容，如"3.12 only"
     status: str = "active"       # "active" | "idle" | "pinned"
     idle_since: str | None = None  # 进入 idle 的时间 ISO
-    llm_call_count: int = 0       # 本会话已发生的 LLM 调用累计数
+    llm_call_count: int = 0       # 进入 idle 后又经过的 LLM 调用数（每次 on_llm_request 递增）
     priority: int = 0    # 排序优先级，越大越靠前
     created_at: str      # 创建时间 ISO
     updated_at: str      # 更新时间 ISO
@@ -66,10 +66,12 @@ class PinnedBlock:
 **idle 自动清理条件**（两者同时满足）：
 
 ```python
-def should_purge_idle(block, current_time, current_llm_count):
+# 实现方式：llm_call_count 在每次 on_llm_request 时对 idle 块递增
+# 进入 idle 时重置为 0，清理时直接比较 >= 阈值
+
+def should_purge_idle(block, current_time):
     idle_duration = current_time - block.idle_since   # 进入 idle 多久了
-    llm_calls_since_idle = current_llm_count - block.llm_call_count_at_idle
-    return idle_duration >= IDLE_RETENTION_DAYS and llm_calls_since_idle >= IDLE_RETENTION_CALLS
+    return idle_duration >= IDLE_RETENTION_DAYS and block.llm_call_count >= IDLE_RETENTION_CALLS
 ```
 
 即：**"闲置超过 N 天 且 又经过了 M 轮 LLM 调用"** 才清理。两个维度结合，避免活跃会话里的短暂闲置块被误删，也避免僵尸会话里的块永久残留。
@@ -84,10 +86,10 @@ CREATE TABLE IF NOT EXISTS pinned_blocks (
     content         TEXT    NOT NULL DEFAULT '',
     status          TEXT    NOT NULL DEFAULT 'active',  -- 'active' | 'idle' | 'pinned'
     idle_since      TEXT,          -- 进入 idle 的时间 ISO，NULL 表示未 idle
-    llm_call_count  INTEGER NOT NULL DEFAULT 0,  -- 进入 idle 时的 LLM 调用累计数快照
+    llm_call_count  INTEGER NOT NULL DEFAULT 0,  -- 进入 idle 后经过的 LLM 调用数（进入 idle 时重置为 0）
     priority        INTEGER NOT NULL DEFAULT 0,
-    created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
-    updated_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+    created_at      TEXT    NOT NULL,
+    updated_at      TEXT    NOT NULL,
     UNIQUE(session_id, label)
 );
 
@@ -115,12 +117,13 @@ CREATE INDEX IF NOT EXISTS idx_pinned_status ON pinned_blocks(session_id, status
 
 ```
 astrbot_plugin_pinned_context/
+├── __init__.py                # 包初始化
+├── _conf_schema.json          # 配置 Schema（WebUI 自动生成面板）
 ├── metadata.yaml              # 插件元信息
 ├── main.py                    # Star 插件主体，生命周期 + 钩子
-├── block_manager.py           # 块的 CRUD、TTL、验证逻辑
+├── block_manager.py           # 块的 CRUD、状态管理、闲置清理
 ├── db.py                      # 数据库初始化和迁移
 ├── injector.py                # 上下文注入逻辑
-├── plugin_config.yml           # 可配置默认值
 └── README.md                  # 用户文档
 ```
 
@@ -130,7 +133,7 @@ astrbot_plugin_pinned_context/
 
 ```python
 class PinnedContextPlugin(Star):
-    def __init__(self, context: Context):
+    def __init__(self, context: Context, config: AstrBotConfig):
         self.block_mgr: BlockManager
         self.injector: ContextInjector
     

@@ -1,5 +1,8 @@
 name: astrbot_plugin_pinned_context
 desc: 钉选上下文块插件——让用户在对话中手动锚定关键信息，不会被滑动窗口截断
 author: 天道
-version: 0.1.0
+version: 0.1.1
 repo: ""
+display_name: 钉选上下文块
+short_desc: 手动锚定关键信息，免疫滑动窗口截断
+astrbot_version: ">=4.0.0"
