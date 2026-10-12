@@ -24,9 +24,24 @@
     "type": "int",
     "default": 10
   },
+  "idle_hard_retention_days": {
+    "description": "idle 块最长保留天数（超过后无视调用轮次限制直接清理）",
+    "type": "int",
+    "default": 30
+  },
   "token_warning_threshold": {
     "description": "注入后总 token 警告阈值（0 = 不检查）",
     "type": "int",
     "default": 1000
+  },
+  "enable_in_group": {
+    "description": "群聊总开关。开启后群内钉选块按发言人隔离（每人一份，互不可见），并受下方 group_whitelist 限制；关闭则群聊完全不可用",
+    "type": "bool",
+    "default": false
+  },
+  "group_whitelist": {
+    "description": "群白名单，仅在群聊总开关开启时生效。留空 = 所有群启用；填写后仅列出的群启用。可填群号，或完整会话标识（平台:消息类型:群号）",
+    "type": "list",
+    "default": []
   }
 }

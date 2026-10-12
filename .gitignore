@@ -1,3 +1,8 @@
 /.workbuddy/
 *.md
 !README.md
+*.zip
+__pycache__/
+*.py[cod]
+.ruff_cache/
+tests/

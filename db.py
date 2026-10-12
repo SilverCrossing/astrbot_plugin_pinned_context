@@ -7,12 +7,13 @@
 
 注意：AstrBot 使用 SQLAlchemy >= 2.0，原生 SQL 必须用 text() 包裹。
 """
-import logging
 
+from astrbot.api import logger
 from sqlalchemy import text
 
-logger = logging.getLogger("astrbot.pinned_context")
-
+# 注意：priority 列已废弃——从 v0.2.0 起不再参与任何排序，注入顺序统一为
+# created_at DESC（见 block_manager._SQL_SELECT_ACTIVE）。列本身保留不删，
+# 因为本插件还没有表结构迁移机制（见 IMPLEMENTATION_REVIEW.md 风险-2）。
 CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS pinned_blocks (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
