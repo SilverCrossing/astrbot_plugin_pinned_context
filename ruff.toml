@@ -1,0 +1,37 @@
+# Ruff 配置 —— 规则集对齐 AstrBot 主仓库的 pyproject.toml（[tool.ruff] 段）。
+#
+# 为什么插件目录要自带一份：ruff 靠向上查找 pyproject.toml / ruff.toml 定位配置，
+# 而本插件目录与 AstrBot 源码目录不构成祖孙关系，不会继承主仓库的规则。
+# 缺这份文件时 ruff 回落到内置默认（只查 E4/E7/E9/F），
+# I / UP / C4 / Q / ASYNC 全部静默失效。
+#
+# 发布前执行：
+#   ruff format .
+#   ruff check .
+# 预演（只打印 diff、不落盘）：
+#   ruff format --diff .
+#   ruff check --fix --diff .
+
+line-length = 88
+target-version = "py310"
+
+[lint]
+select = [
+  "F",     # Pyflakes
+  "W",     # pycodestyle warnings
+  "E",     # pycodestyle errors
+  "ASYNC", # flake8-async
+  "C4",    # flake8-comprehensions
+  "Q",     # flake8-quotes
+  "I",     # import-order
+  "UP",    # pyupgrade
+]
+# 与主仓库保持一致：E501（行过长）交给 formatter 处理，不单独报错；
+# F403/F405 为通配符导入；ASYNC230/240 是主仓库自身的待办，一并沿用豁免。
+ignore = [
+  "F403",
+  "F405",
+  "E501",
+  "ASYNC230",
+  "ASYNC240",
+]
