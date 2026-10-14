@@ -6,3 +6,5 @@ __pycache__/
 *.py[cod]
 .ruff_cache/
 tests/
+test_pinned_context.py
+pytest.ini
