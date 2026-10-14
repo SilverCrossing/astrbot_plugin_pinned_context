@@ -11,9 +11,7 @@
 from astrbot.api import logger
 from sqlalchemy import text
 
-# 注意：priority 列已废弃——从 v0.2.0 起不再参与任何排序，注入顺序统一为
-# created_at DESC（见 block_manager._SQL_SELECT_ACTIVE）。列本身保留不删，
-# 因为本插件还没有表结构迁移机制（见 IMPLEMENTATION_REVIEW.md 风险-2）。
+# priority 为旧版列；保留以兼容现有数据库，不再参与排序。
 CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS pinned_blocks (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -21,6 +19,7 @@ CREATE TABLE IF NOT EXISTS pinned_blocks (
     label           TEXT    NOT NULL,
     content         TEXT    NOT NULL DEFAULT '',
     status          TEXT    NOT NULL DEFAULT 'active',
+    level           TEXT    NOT NULL DEFAULT 'strong',
     idle_since      TEXT,
     llm_call_count  INTEGER NOT NULL DEFAULT 0,
     priority        INTEGER NOT NULL DEFAULT 0,
@@ -37,8 +36,24 @@ CREATE_INDEXES_SQL = [
 
 
 async def init_db(db_session) -> None:
-    """创建表和索引。"""
+    """创建或迁移表结构；旧群个人块降为软上下文。"""
     await db_session.execute(text(CREATE_TABLE_SQL))
+    result = await db_session.execute(text("PRAGMA table_info(pinned_blocks)"))
+    columns = {row[1] for row in result.fetchall()}
+    if "level" not in columns:
+        await db_session.execute(
+            text(
+                "ALTER TABLE pinned_blocks ADD COLUMN level TEXT NOT NULL DEFAULT 'strong'"
+            )
+        )
+        # 旧版本所有块都在 system prompt；群成员块改为软上下文，
+        # 避免升级后继续给普通群成员系统提示词写入权。
+        await db_session.execute(
+            text(
+                "UPDATE pinned_blocks SET level = 'context' "
+                "WHERE session_id LIKE '%::u:%'"
+            )
+        )
     for sql in CREATE_INDEXES_SQL:
         await db_session.execute(text(sql))
     await db_session.commit()

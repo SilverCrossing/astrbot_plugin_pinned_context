@@ -11,9 +11,11 @@ from datetime import datetime, timedelta, timezone
 
 from astrbot.api import logger
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 # 合法的块状态
 _VALID_STATUS = ("active", "idle", "pinned")
+_VALID_LEVEL = ("strong", "context")
 
 # prepare_injection 的三条语句集中在此，避免同一段语义在多处漂移。
 _SQL_BUMP_IDLE = (
@@ -32,9 +34,9 @@ _SQL_PURGE_IDLE = (
 # 用 created_at 而非 updated_at，保证 /pin edit 改内容不会让块改变裁决位次。
 # priority 列已废弃不用（见 db.py 注释）。
 _SQL_SELECT_ACTIVE = (
-    "SELECT label, content, status FROM pinned_blocks "
+    "SELECT label, content, status, level FROM pinned_blocks "
     "WHERE session_id = :sid AND status IN ('active', 'pinned') "
-    "ORDER BY created_at DESC"
+    "ORDER BY created_at DESC, id DESC"
 )
 
 
@@ -70,11 +72,14 @@ class BlockManager:
         label: str,
         content: str,
         status: str = "active",
+        level: str = "strong",
     ) -> dict:
         """新增一个钉选块。"""
         # 校验状态参数
         if status not in _VALID_STATUS:
             return {"ok": False, "error": f"无效状态: {status}"}
+        if level not in _VALID_LEVEL:
+            return {"ok": False, "error": f"无效级别: {level}"}
 
         stripped_label, stripped_content = label.strip(), content.strip()
         # 静默截断会让用户以为存进去的是全文，这里把截断事实回报给调用方
@@ -116,25 +121,44 @@ class BlockManager:
                 }
 
             now = datetime.now(timezone.utc).isoformat()
-            await session.execute(
-                text("""INSERT INTO pinned_blocks
-                        (session_id, label, content, status, created_at, updated_at)
-                        VALUES (:sid, :label, :content, :status, :created, :updated)"""),
-                {
-                    "sid": session_id,
-                    "label": label,
-                    "content": content,
-                    "status": status,
-                    "created": now,
-                    "updated": now,
-                },
-            )
+            try:
+                inserted = await session.execute(
+                    text("""INSERT INTO pinned_blocks
+                        (session_id, label, content, status, level, created_at, updated_at)
+                        SELECT :sid, :label, :content, :status, :level, :created, :updated
+                        WHERE (SELECT COUNT(*) FROM pinned_blocks WHERE session_id = :sid)
+                              < :max_blocks"""),
+                    {
+                        "sid": session_id,
+                        "label": label,
+                        "content": content,
+                        "status": status,
+                        "level": level,
+                        "created": now,
+                        "updated": now,
+                        "max_blocks": self.max_blocks,
+                    },
+                )
+            except IntegrityError:
+                await session.rollback()
+                return {"ok": False, "error": f"标签'{label}'已存在"}
+            if inserted.rowcount == 0:
+                return {
+                    "ok": False,
+                    "error": f"已达上限（{self.max_blocks} 个块），请先清理",
+                }
             await session.commit()
 
         logger.info(
             f"[钉选上下文] 新增块: session={self._tag(session_id)} label={label} status={status}"
         )
-        return {"ok": True, "label": label, "status": status, "truncated": truncated}
+        return {
+            "ok": True,
+            "label": label,
+            "status": status,
+            "level": level,
+            "truncated": truncated,
+        }
 
     async def remove(self, session_id: str, label: str) -> dict:
         """删除指定块。"""
@@ -233,6 +257,40 @@ class BlockManager:
         )
         return {"ok": True, "label": label, "status": new_status}
 
+    async def set_level(self, session_id: str, label: str, level: str) -> dict:
+        """切换注入级别，不改变生命周期状态。"""
+        if level not in _VALID_LEVEL:
+            return {"ok": False, "error": f"无效级别: {level}"}
+        async with self._db() as session:
+            result = await session.execute(
+                text(
+                    "UPDATE pinned_blocks SET level = :level, updated_at = :updated "
+                    "WHERE session_id = :sid AND label = :label"
+                ),
+                {
+                    "level": level,
+                    "updated": datetime.now(timezone.utc).isoformat(),
+                    "sid": session_id,
+                    "label": label,
+                },
+            )
+            await session.commit()
+        if result.rowcount == 0:
+            return {"ok": False, "error": f"块'{label}'不存在"}
+        return {"ok": True, "label": label, "level": level}
+
+    async def get_level(self, session_id: str, label: str) -> str | None:
+        async with self._db() as session:
+            result = await session.execute(
+                text(
+                    "SELECT level FROM pinned_blocks WHERE session_id = :sid "
+                    "AND label = :label"
+                ),
+                {"sid": session_id, "label": label},
+            )
+            row = result.fetchone()
+        return row[0] if row else None
+
     # ── 查询 ────────────────────────────────────────────
 
     async def list_all(self, session_id: str) -> dict:
@@ -244,9 +302,9 @@ class BlockManager:
         async with self._db() as session:
             result = await session.execute(
                 text(
-                    "SELECT label, content, status, idle_since FROM pinned_blocks "
+                    "SELECT label, content, status, idle_since, level FROM pinned_blocks "
                     "WHERE session_id = :sid "
-                    "ORDER BY created_at DESC"
+                    "ORDER BY created_at DESC, id DESC"
                 ),
                 {"sid": session_id},
             )
@@ -262,6 +320,7 @@ class BlockManager:
                     "content": row[1],
                     "status": row[2],
                     "idle_since": row[3],
+                    "level": row[4],
                 }
             )
         return grouped
@@ -317,7 +376,10 @@ class BlockManager:
             logger.info(
                 f"[钉选上下文] 清理了 {purged} 个过期 idle 块 (session={self._tag(session_id)})"
             )
-        return [{"label": r[0], "content": r[1], "status": r[2]} for r in rows]
+        return [
+            {"label": r[0], "content": r[1], "status": r[2], "level": r[3]}
+            for r in rows
+        ]
 
     # ── 清空 ────────────────────────────────────────────
 

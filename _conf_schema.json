@@ -43,5 +43,15 @@
     "description": "群白名单，仅在群聊总开关开启时生效。留空 = 所有群启用；填写后仅列出的群启用。可填群号，或完整会话标识（平台:消息类型:群号）",
     "type": "list",
     "default": []
+  },
+  "group_shared_admin_ids": {
+    "description": "可管理群共享块的发送者 ID，或完整的 <umo>::u:<发送者 ID>（仅授权特定群）。AstrBot 管理员始终有权限",
+    "type": "list",
+    "default": []
+  },
+  "group_strong_user_ids": {
+    "description": "可写入群个人强约束的发送者 ID，或完整的 <umo>::u:<发送者 ID>。共享块管理员也有权限",
+    "type": "list",
+    "default": []
   }
 }
